@@ -14,7 +14,7 @@ import casadi.*
 hypothetical_data_generator ;
 
 % Add noise
-
+%%
 
 % Start with an empty NLP
 w={}; %variables
@@ -25,18 +25,13 @@ J = 0; % cost | objective function
 gg={}; % constraints
 lbg = []; % lower bound of constraints
 ubg = []; % upper bound of constraints
-
+gg0 = [] ; 
 UP = horzcat(unknown_parameters(:,1)',unknown_parameters(:,2)',...
     unknown_parameters(:,3)',unknown_parameters(:,4)') ;
 
 % create muscle parameters variables
-w = { w{:}, UP};
-
-% we should find muscle_tendon_parameters_num
-% w0 =  [w0; muscle_tendon_parameters_num ]; %todo
-
-% w0 =  [w0; muscle_tendon_parameters_num + rand()*xxx]; %todo
-
+% w = { w{:}, UP};
+X = {} ; 
 
 
 % header = header = {'Torque','q1','q2',...
@@ -56,19 +51,22 @@ W_angle = (3/180) * pi;  % 1 Nm correspond à 3 deg
 
 
 
-for trial = 1 % : ntrials % for 1 to nb trials
+for trial = 1 : ntrials % for 1 to nb trials
 
     %  the bounds
     w = { w{:}, UP};
-    w0 =  [w0; muscle_tendon_parameters_num ]; 
-    lbw = [lbw; muscle_tendon_parameters_num * 0.5]; % lower bound of variable
-    ubw = [ubw; muscle_tendon_parameters_num * 2]; % upper bound of variable
-    lbg = [lbg; zeros(1,6)]; % lower bound of constraints
-    ubg = [ubg; [0.05, 0.05, 0.05 ,muscle_tendon_parameters_num(1:3)*1.8]]; % upper bound of constraints
+    w0 =  [w0, muscle_tendon_parameters_num ]; 
+    lbw = [lbw, muscle_tendon_parameters_num * 0.5]; % lower bound of variable
+    ubw = [ubw, muscle_tendon_parameters_num * 2]; % upper bound of variable
+    lbg = [lbg, zeros(1,6)]; % lower bound of constraints
+    ubg = [ubg, [0.05, 0.05, 0.05 ,muscle_tendon_parameters_num(1:3)*1.8]]; % upper bound of constraints
+    gg0 = [gg0, 0.01, 0.01, 0.01 ,muscle_tendon_parameters_num(1:3)] ;
 
     fiberLength_k = SX.sym(['Fiber_length_' num2str(trial)], nMuscles);
     tendonLengthening_k = SX.sym(['Tendon_Lengthening_' num2str(trial)], nMuscles);
     x = vertcat((tendonLengthening_k),(fiberLength_k)) ; 
+
+    X = {X{:},x'};
 
     data = Data(trial,:);
 
@@ -112,22 +110,34 @@ for trial = 1 % : ntrials % for 1 to nb trials
 
 end
 
-
+%%
 
 % % Create an NLP solver
 %prob = struct('f', J, 'x', w1, 'g',g1);
 
 % nlp prob : 
 % "x" opt parameters, 'f' function to minimized, 'g' contraint function 
-prob = struct('x', [vertcat(w{1}),vertcat(x')], 'f', J , 'g',vertcat(gg{:})); 
+%prob = struct('x', [vertcat(w{1}),vertcat(x')], 'f', J , 'g',vertcat(gg{:})); 
+
+
+
+%prob = struct('x', [vertcat(w{1});vertcat(X{:})], 'f', J , 'g',vertcat(gg{:})); 
+prob = struct('x', [horzcat(w{1}),horzcat(X{:})], 'f', J , 'g',vertcat(gg{:})); 
+
+
 
 solver = nlpsol('solver', 'ipopt', prob);
 
- 
-% Solve the NLP
-sol = solver('x0', w0, 'lbx', lbw, 'ubx', ubw,...
+ W0 = [w0(1:12), gg0] ; 
+sol = solver('x0', W0, 'lbx', [lbw(1,1:12), lbg], 'ubx', [ubw(1,1:12),ubg] , ...
     'lbg', lbg, 'ubg', ubg);
+
+
+
 w_opt = full(sol.x);
+
+nparam = 12 ; 
 
 param_opt = w_opt(1:nparam);
 
+differnce = w0(1:12) - param_opt ; 
