@@ -63,14 +63,14 @@ muscle_tendon_parameters_2 = muscle_tendon_parameters_num([3,6,9,12]);
 % Fiber_length = Optimal_fiber_length_2 + (Optimal_fiber_length_2*.3);
 % plotMuscleForcelength(vizualizationFun,Optimal_fiber_length_2,Maximal_isometric_muscle_force_2,Muscle_activation,Fiber_length)
 
-    %% test rooted variables (signle muscle)
+    %% test rooted variables (signle muscle) - exemple soleus 
 %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
 known_num = [Muscle_activation,gastrocnemius_length_num , muscle_tendon_parameters_2];
 % unknown  = vertcat(tendonLength(1), fiberLength(1), pennationAngle(1)) ;
 % as x0 (xstart)
 unknown  = [Tendon_slack_length_2, Optimal_fiber_length_2, Pennation_angle_at_muscle_optimal_fiber_length_2] ;
 
-rooted_variables= full(casadiFun.equilibrateMuscleTendonSingleMuscle2(unknown,known_num));
+rooted_variables= full(casadiFun.equilibrateMuscleTendonSingleMuscle(unknown,known_num));
 
 tendon_length_rooted = rooted_variables(1);
 fiber_length_rooted = rooted_variables(2);
@@ -96,9 +96,9 @@ disp(['muscle active force: ', num2str(muscleActiveForce),' N'])
 disp(['muscle total force: ', num2str(muscleTotalForce),' N'])
 
 % error 
-residuals = full(casadiFun.equilibriumErrorSingleMuscle2(unknown',known_num)); % residuals
-disp(['residuals for tendon length: ', num2str(residuals(1)),' m'])
-disp(['residuals for fiber length: ', num2str(residuals(2)),' m'])
-disp(['residuals for pennation angle: ', num2str(residuals(3)),' rad'])
+residuals = full(casadiFun.equilibriumErrorSingleMuscle(unknown',known_num)); % residuals
+disp(['residuals g5: ', num2str(residuals(1))])
+disp(['residuals g6: ', num2str(residuals(2))])
+disp(['residuals g7: ', num2str(residuals(3))])
 
 end 

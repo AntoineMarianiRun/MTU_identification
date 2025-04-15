@@ -174,15 +174,6 @@ getMomentArm = Function('MomentArm', ...
 
 
 
-
-
-
-
-
-
-
-
-
                        %% 2. De Groote equation 
 %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%% 
 % Groote F De, Kinney AL, Rao A V, Fregly BJ. Evaluation of Direct Collocation
@@ -190,11 +181,12 @@ getMomentArm = Function('MomentArm', ...
 % Ann Biomed Eng. 2016; 44: 2922–2936. https://doi.org/10.1007/s10439-016-1591-9
 % PMID: 27001399
 
+%%                          single muscle 
+%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
     %% 2.1 Parameters and input of the equation 
 %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
     % 2.1.1 Muscle Tendon Parameters (ℓom, φo, Fom, ℓst) 
 %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
-nMuscles = 3;
 optimalFiberLength = SX.sym('Optimal_fiber_length', nMuscles);
 phi0 = SX.sym('Pennation_angle_at_muscle_optimal_fiber_length', nMuscles);
 maximalIsometricForce = SX.sym('Maximal_isometric_muscle_force', nMuscles);
@@ -205,10 +197,15 @@ muscleTendonParameters =  vertcat(optimalFiberLength, phi0, maximalIsometricForc
     % 2.1.2 Muscle tendon states input of the muscle tendon equation 
 %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
 a = SX.sym('Muscle_activation', nMuscles);
+LUMT = SX.sym('UMT_length', nMuscles);
+
+    % 2.1.3 rooted variables  
+%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
 fiberLength = SX.sym('Fiber_length', nMuscles);
 tendonLength = SX.sym('Tendon_length', nMuscles);
+pennationAngle = SX.sym('Tendon_length', nMuscles);
 
-rootedvariables = vertcat(fiberLength, tendonLength);
+rootedvariables = vertcat(fiberLength, tendonLength,pennationAngle);
 
     %% 2.2 Activation Dynamics (Not use in our modelisation) 
 %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
@@ -325,7 +322,49 @@ getNormalizedMuscleForce = Function('getNormalizedMuscleForce', ...
     {a(1),fiberLength(1), optimalFiberLength(1)}, {normalizedMuscleForce(1)}, ...
     {'Muscle_activation','Fiber_length','Optimal_fiber_length'}, {'normalizedMuscleForce'}) ;
 
-    %% 2.5  Casadi functions about model Muscle-Tendon Forces
+                       %% 3. equilibrium functions 
+%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%% 
+    %% 3.1  inputed and rooted variables of equilibrium functions
+%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+
+% equilibrium function (for all muscles)
+g5 = LUMT - ((cos(pennationAngle) .* fiberLength) + tendonLength) ;        % length equilibrium 
+g6 = (optimalFiberLength .* sin(phi0)) - (fiberLength .* sin(pennationAngle)) ; % deforamtion 
+g7 = muscleForce .* cos(pennationAngle) - tendonForce ;                    % forces equilibrium
+
+unknown  = vertcat(tendonLength, fiberLength, pennationAngle) ;            % what we want to get 
+known = vertcat(a, LUMT, muscleTendonParameters) ;                         % what we know 
+
+% option of the solver 
+opts_kinsol = struct("constraints", ones(9, 1), ...    
+    'abstol', 1e-12, ...
+    'u_scale', 1./[0.1, 0.01, 0.001, 0.1, 0.01, 0.001, 0.1, 0.01, 0.001]',...
+    'max_iter',1000,...
+    'error_on_fail', false,...
+    'disable_internal_warnings', true);  %,...'iterative_solver', 'bcgstab', ...%'bcgstab', ...
+    % 'print_level',3); % 1 means >= 0 
+    
+equilibriumError = Function('equilibriumError', {unknown, known}, {vertcat(g5, g6, g7)},{'x', 'p'}, {'residuals'}); 
+equilibrateMuscleTendon = rootfinder('equilibrateMuscleTendon','kinsol',equilibriumError, opts_kinsol) ;
+
+% single muscle 
+% option of the solver 
+opts_kinsol_single_muscle = struct("constraints", ones(3, 1), ...    
+    'abstol', 1e-15, ...
+    'u_scale', 1./[0.1, 0.04, 0.1]',...
+    'max_iter',10000,...
+    'error_on_fail', false,...
+    'disable_internal_warnings', true); %,...  %,...'iterative_solver', 'bcgstab', ...%'bcgstab', ...
+    %'print_level',3); % 1 means >= 0 
+
+unknown  = vertcat(tendonLength(1), fiberLength(1), pennationAngle(1)) ;   % what we want to get 
+known = vertcat(a(1), LUMT(1), muscleTendonParameters(1),muscleTendonParameters(4),muscleTendonParameters(7),muscleTendonParameters(10)) ;                % what we know 
+
+equilibriumErrorSingleMuscle = Function('equilibriumErrorSingleMuscle', {unknown, known}, {vertcat(g5(1), g6(1), g7(1))},{'x', 'p'}, {'residuals'}); 
+equilibrateMuscleTendonSingleMuscle = rootfinder('equilibrateMuscleTendonSingleMuscle','kinsol',equilibriumErrorSingleMuscle, opts_kinsol_single_muscle) ;
+
+
+%% 2.5  Casadi functions about model Muscle-Tendon Forces
 %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
 neuromusculoskeletal_state = vertcat(a, q, skeleton) ; 
 
@@ -364,116 +403,6 @@ normalizeFiberLength = Function('normalizeFiberLength', ...
 
 
 
-
-
-
-
-                       %% 3. equilibrium functions 
-%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%% 
-    %% 3.1  inputed and rooted variables of equilibrium functions
-%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
-% 3.1.1 input
-%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
-% p = vertcat(neuromusculoskeletal_state , muscleTendonParameters) ; % we know
-LUMT = SX.sym('UMT_length', nMuscles);
-
-% 3.1.2 unknown 
-%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
-FT = SX.sym('Tendon_force', nMuscles);
-FM = SX.sym('Muscle_force', nMuscles);
-pennationAngle = SX.sym('Pennation_angle', nMuscles); 
-
-    %% 3.2  constraint functions
-%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
-g3 = FT - tendonForce ; 
-g4 = FM - muscleForce ; 
-g5 = LUMT - (cos(pennationAngle) .* fiberLength + tendonLength) ; 
-g6 = (optimalFiberLength .* sin(phi0)) - (fiberLength .* sin(pennationAngle)) ; 
-g7 = FM .* cos(pennationAngle) - FT ; 
-
-    %%  3.3 Muscle-tendon equilibrium 
-%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
-% 3.3.1 all muscle 
-%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
-unknown  = vertcat(FT, FM, tendonLength, fiberLength, pennationAngle) ; 
-known = vertcat(a, LUMT, muscleTendonParameters) ; 
-
-opts_kinsol = struct("constraints", ones(15, 1), ...    
-    'abstol', 1e-12, ...
-    'u_scale', 1./[1000, 1000, 1000,...
-    1000, 1000, 1000,...
-    0.1, 0.1, 0.1,...
-    0.01, 0.01, 0.01,...
-    0.1, 0.1, 0.1]',...
-    'max_iter',0,...
-    'disable_internal_warnings', true);  %,...'iterative_solver', 'bcgstab', ...%'bcgstab', ...
-    % 'print_level',3); % 1 means >= 0 
-    
-equilibriumError = Function('equilibriumError', {unknown, known}, {vertcat(g3, g4, g5, g6, g7)},{'x', 'p'}, {'residuals'}); 
-equilibrateMuscleTendon = rootfinder('equilibrateMuscleTendon','kinsol',equilibriumError, opts_kinsol) ;
-
-% 3.3.1 single muscle 
-%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
-unknown  = vertcat(FT(1), FM(1), tendonLength(1), fiberLength(1), pennationAngle(1)) ; 
-known = vertcat(a(1), LUMT(1), optimalFiberLength(1), phi0(1),maximalIsometricForce(1),tendonSlackLength(1)) ; 
-opts_kinsolSM = struct("constraints", ones(5, 1), ...    
-    'abstol', 1e-12, ...
-    'u_scale', 1./[1000, 1000, 0.1, 0.01, 0.1]',...
-    'error_on_fail', false,...
-    'disable_internal_warnings', true); %,...'iterative_solver', 'bcgstab', ...%'bcgstab', ...
-    % 'print_level',3); % 1 means >= 0 
-
-equilibriumErrorSingleMuscle = Function('equilibriumErrorSingleMuscle', {unknown, known}, {vertcat(g3(1), g4(1), g5(1), g6(1), g7(1))},{'x', 'p'}, {'residuals'}); 
-equilibrateMuscleTendonSingleMuscle = rootfinder('equilibrateMuscleTendonSingleMuscle','kinsol',equilibriumErrorSingleMuscle, opts_kinsolSM) ;
-
-
-
-%% test of equilibrium functions
-%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
-
-    %% 3.2  constraint functions
-%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
-% single muscle 
-g5 = LUMT - (cos(pennationAngle) .* fiberLength + tendonLength) ; 
-g6 = (optimalFiberLength .* sin(phi0)) - (fiberLength .* sin(pennationAngle)) ; 
-g7 = muscleForce .* cos(pennationAngle) - tendonForce ; 
-
-unknown  = vertcat(tendonLength(1), fiberLength(1), pennationAngle(1)) ; 
-known = vertcat(a(1), LUMT(1), muscleTendonParameters([1,4,7,10])) ; 
-
-% otion of the solver 
-opts_kinsol = struct("constraints", ones(3, 1), ...    
-    'abstol', 1e-12, ...
-    'u_scale', 1./[0.1, 0.01, 0.1]',...
-    'max_iter',0,...
-    'error_on_fail', false,...
-    'disable_internal_warnings', true);  %,...'iterative_solver', 'bcgstab', ...%'bcgstab', ...
-    % 'print_level',3); % 1 means >= 0 
-    
-equilibriumErrorSingleMuscle2 = Function('equilibriumErrorSingleMuscle2', {unknown, known}, {vertcat(g5(1), g6(1), g7(1))},{'x', 'p'}, {'residuals'}); 
-equilibrateMuscleTendonSingleMuscle2 = rootfinder('equilibrateMuscleTendonSingleMuscle2','kinsol',equilibriumErrorSingleMuscle2, opts_kinsol) ;
-
-% all muscle 
-
-unknown  = vertcat(tendonLength, fiberLength, pennationAngle) ; 
-known = vertcat(a, LUMT, muscleTendonParameters) ; 
-
-% otion of the solver 
-opts_kinsol = struct("constraints", ones(9, 1), ...    
-    'abstol', 1e-12, ...
-    'u_scale', 1./[0.1, 0.1,0.1,...
-    0.01, 0.01, 0.01,...
-    0.1, 0.1, 0.1]',...
-    'max_iter',0,...
-    'error_on_fail', false,...
-    'disable_internal_warnings', true);  %,...'iterative_solver', 'bcgstab', ...%'bcgstab', ...
-    % 'print_level',3); % 1 means >= 0 
-
-equilibriumError2 = Function('equilibriumError2', {unknown, known}, {vertcat(g5, g6, g7)},{'x', 'p'}, {'residuals'}); 
-equilibrateMuscleTendon2 = rootfinder('equilibrateMuscleTendon2','kinsol',equilibriumError2, opts_kinsol) ;
-
-
-
                        %% 4. Computing Joint Moments and Angles 
 %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
     %%  Moment articulaire Mj(θ, t) = ∑ i=1 m (ri(θ) ⋅ Fimt(θ, t)) 
@@ -483,6 +412,8 @@ jointMoment = jointMoment(end,end) ;
 getJointMoment = Function('getJointMoment', ...
     {all_states, muscleTendonParameters}, {jointMoment}, ...
     {'all_states', 'muscle_tendon_parameters'}, {'jointMoment'});
+
+FT = SX.sym('tendon_Forces', nMuscles);
 
 jointMoment = momentArm' * FT ;
 jointMoment = jointMoment(end,end) ;
@@ -509,12 +440,10 @@ casadiFun = struct(...
     'getNormalizeTendonForce', getNormalizeTendonForce,...                
     'normalizeTendonLength',normalizeTendonLength,...                      % about lengthening
     'normalizeFiberLength', normalizeFiberLength, ...                      
-    'equilibriumError',equilibriumError,...
+    'equilibriumError',equilibriumError,...                                % about equilibrium
     'equilibrateMuscleTendon', equilibrateMuscleTendon,...
-    'equilibriumErrorSingleMuscle',equilibriumErrorSingleMuscle,...        % about equilibrium
+    'equilibriumErrorSingleMuscle',equilibriumErrorSingleMuscle,...        
     'equilibrateMuscleTendonSingleMuscle', equilibrateMuscleTendonSingleMuscle, ... 
-    'equilibriumErrorSingleMuscle2', equilibriumErrorSingleMuscle2, ... 
-    'equilibrateMuscleTendonSingleMuscle2', equilibrateMuscleTendonSingleMuscle2, ... 
     'getJointMoment',getJointMoment,...
     'getJointMoment2',getJointMoment2);                                    % about torque 
 

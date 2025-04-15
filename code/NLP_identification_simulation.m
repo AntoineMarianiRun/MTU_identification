@@ -138,7 +138,7 @@ for trial = 1:ntrials % for 1 to nb trials
     lbg = [lbg; zeros(15, 1)]; % lower bound of constraints
     ubg = [ubg; zeros(15, 1)]; % upper bound of constraints
 
-    casadiFun.equilibriumError(w0_k, [a_trial'; UMTlength; muscle_tendon_parameters_num']); % equilibrium
+    % casadiFun.equilibriumError(w0_k, [a_trial'; UMTlength; muscle_tendon_parameters_num']); % equilibrium
     Torque_simulated = casadiFun.getJointMoment2( musculoskeletal_states_trial, FT_k) ; % simulated torque 
 
     % objectives functions
