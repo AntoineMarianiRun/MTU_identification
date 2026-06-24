@@ -579,6 +579,11 @@ initial_guess, upper_band, lower_band, param_index = useful.get_initial_guess(
     'measured', verbose=True)
 
 
+initial_guess, upper_band, lower_band, param_index = useful.get_initial_guess(
+    muscle_tendon_parameters_num, data_train, param_config,
+    'scaled', verbose=True)
+
+
 # 4. Lancer la figure interactive
 
 pm_.interactive_calibration_figure(
@@ -594,6 +599,10 @@ pm_.interactive_calibration_figure(
 
 lower_band[12:15] *=0.01
 initial_guess[12:15] *=1.3
+initial_guess[9:11] *=1.3
+upper_band[9:11] *= 2
+
+
 # 6.2.2 optimisation problem
 
 muscle_tendon_parameters_opt = useful.optimization_nlp(
@@ -606,6 +615,7 @@ muscle_tendon_parameters_opt = useful.optimization_nlp(
     unknown_parameters,
     casadi_function,
     param_index)
+
 
 """
 muscle_tendon_parameters_opt = useful.optimization_nlp(

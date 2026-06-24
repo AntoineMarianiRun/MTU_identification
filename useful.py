@@ -225,6 +225,7 @@ def get_fiber_passive_force_length(normalized_fiber_length, k_fiber, maximal_iso
 
     fiber_passive_force = normalized_fiber_passive_force * maximal_isometric_force  # Non - normalized equation
     """
+
     # avoid inf in jackobian
     e0 = 0.6
     F_THRESHOLD = 30.0
@@ -254,7 +255,6 @@ def get_fiber_passive_force_length(normalized_fiber_length, k_fiber, maximal_iso
     normalized_fiber_passive_force = fmax(normalized_fiber_passive_force, 0.0)
 
     fiber_passive_force = normalized_fiber_passive_force * maximal_isometric_force
-
 
     return fiber_passive_force
 
@@ -2123,8 +2123,8 @@ def optimization_nlp(data, initial_guess, lower_band, upper_band, skeleton_num,
     ubw += list(upper_band / scale)
 
     # ============ [FIX 4] Poids du coût = 1 / sigma**2 ============ #
-    sigma_torque = 0.02                                 # N.m
-    sigma_fiber = 0.005                                # ~5 mm en m
+    sigma_torque = 50                                 # N.m
+    sigma_fiber = 0.01                                # ~5 mm en m
     sigma_penn = np.deg2rad(5)                         # ~5° en rad
 
     for trial in range(n_trials):
@@ -2152,8 +2152,8 @@ def optimization_nlp(data, initial_guess, lower_band, upper_band, skeleton_num,
         tl_meas = np.abs(measured_tendon_length)
         pa_meas = np.abs(measured_pennation_angle)
 
-        lb_fl = fl_meas - fl_meas * 0.1
-        ub_fl = fl_meas + fl_meas * 0.1
+        lb_fl = fl_meas - fl_meas * 0.05
+        ub_fl = fl_meas + fl_meas * 0.05
 
         lb_pa = pa_meas - np.deg2rad(2)
         ub_pa = pa_meas + np.deg2rad(2)
@@ -2198,8 +2198,8 @@ def optimization_nlp(data, initial_guess, lower_band, upper_band, skeleton_num,
         e_fiber_trials = measured_fiber_length - fiber_length_k
         e_pennation_trials = measured_pennation_angle - pennation_angle_k
 
-        j_torque += (e_torque_trials ** 2) / sigma_torque ** 2
-        j_fascicle_length += sum1((e_fiber_trials ** 2) / sigma_fiber ** 2)
+        j_torque += (e_torque_trials ** 2) / sigma_torque
+        j_fascicle_length += sum1((e_fiber_trials ** 2) / sigma_fiber )
         """
         j_pennation_angle += sum1((e_pennation_trials ** 2) / sigma_penn ** 2)
         """
@@ -2247,12 +2247,11 @@ def optimization_nlp(data, initial_guess, lower_band, upper_band, skeleton_num,
     grad_g_func = Function("grad_g", [w], [jacobian(g, w).T])
 
     opts_ipopt = {
-        "ipopt.max_iter": 2500,
+        "ipopt.max_iter": 1000,
         "ipopt.tol": 1e-4,
         "ipopt.print_info_string": "yes",
         "ipopt.linear_solver": "mumps",
         "ipopt.hessian_approximation": "exact",
-        # PAS de "iteration_callback" ici
     }
 
     sol = run_with_live_plot(

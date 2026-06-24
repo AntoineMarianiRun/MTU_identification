@@ -1076,8 +1076,8 @@ def interactive_calibration_figure(
         param_upper = hi if param_upper is None else np.asarray(param_upper, float)
 
     # --- poids du coût pondéré (mêmes valeurs que optimization_nlp) ---
-    sigma_torque = 0.02         # N.m
-    sigma_fiber = 0.005         # m
+    sigma_torque = 10         # N.m
+    sigma_fiber = 0.01         # m
 
     # --- mesures de référence (lignes utiles) ---
     meas_torque = data[0, :]
@@ -1132,12 +1132,15 @@ def interactive_calibration_figure(
         ok_f = ~np.isnan(e_fiber)
         n_ok = max(int(ok_t.sum()), 1)
 
+
         # --- pondéré (optimization_nlp) : normalisé par n_element*n_trials ---
         n_element = 4  # 1 torque + 3 fibres
         n_comp = n_element * n_trials
         Jw_torque = np.nansum(e_torque[ok_t] ** 2) / sigma_torque ** 2 / n_comp
         Jw_fiber = np.nansum(e_fiber[ok_f] ** 2) / sigma_fiber ** 2 / n_comp
         Jw_total = Jw_torque + Jw_fiber
+
+
 
         # --- non pondéré (somme des carrés, unités SI) ---
         Ju_torque = np.nansum(e_torque[ok_t] ** 2)
