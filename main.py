@@ -161,15 +161,12 @@ w = pm_.force_length_sliders(
 )
 
 
-"""
+
 # 2.2.4.4 test
-pm_.interactive_model(skeleton_num, muscle_tendon_parameters_num, casadi_function)
-
-
-# 2.2.5 interactive model test
-useful.interactive_model(skeleton_num, muscle_tendon_parameters_num, casadi_function)
-
 """
+pm_.interactive_model(skeleton_num, muscle_tendon_parameters_num, casadi_function)
+"""
+
 #############################################################################
 #     3. neuro-musculo-skeletal: scaled model
 #############################################################################
@@ -403,6 +400,7 @@ stats = useful.compare_datasets(
 )
 
 
+
 #  5.6 optimisation problem with initial guess according to our methods
 initial_guess, upper_band, lower_band, param_index = useful.get_initial_guess(
     muscle_tendon_parameters_num, hypothetical_data, param_config,
@@ -421,13 +419,9 @@ muscle_tendon_parameters_opt_x0_rand = useful.optimization_nlp(
     param_index)
 
 
-muscle_tendon_parameters_opt_x0_rand = useful.optimization_nlp(
-    hypothetical_data, initial_guess, lower_band, upper_band, skeleton_num,
-    muscle_tendon_parameters_num, unknown_parameters, casadi_function,
-    param_index)
-
 
 #  5.7 generate data with the optimized parameter
+
 header, hypothetical_data_opt, path_csv = useful.generate_estimated_data(hypothetical_data, skeleton_num, muscle_tendon_parameters_opt_x0_rand,
                             casadi_function,
                             output_dir='simulated_data', filename='data_estime_measured.csv',
@@ -451,21 +445,23 @@ hypothetical_data_noise = useful.add_noise(
     rng=rng,
 )
 
-hypothetical_data_noise = manipfun.add_tendon_length_to_data(hypothetical_data_noise,skeleton_num, casadi_function)
+hypothetical_data_noise = manipfun.add_tendon_length_to_data(hypothetical_data_noise,skeleton_num, casadi_function) # remove plot 
 
 manipfun.plot_data(hypothetical_data_noise, muscle_names=['tibialis', 'soleus', 'gastrocnemius'])
 
 
 muscle_tendon_parameters_opt_bruit = useful.optimization_nlp(
-    hypothetical_data_noise, initial_guess, lower_band, upper_band, skeleton_num,
-    muscle_tendon_parameters_num, unknown_parameters, casadi_function,
+    hypothetical_data_noise,
+    initial_guess,
+    lower_band,
+    upper_band,
+    skeleton_num,
+    muscle_tendon_parameters_num,
+    unknown_parameters,
+    casadi_function,
     param_index)
 
     
-initial_guess, upper_band, lower_band = useful.get_initial_guess(muscle_tendon_parameters_num, hypothetical_data,
-                                  strategy='measured')
-
-
 
 
 
@@ -489,7 +485,7 @@ results_mc = run_mc(
     casadi_function=casadi_function,
     optimization_nlp=useful.optimization_nlp,
     param_index=param_index,
-    cfg={"n_mc": 100},
+    cfg={"n_mc": 30},
 )
 
 
@@ -553,8 +549,11 @@ param_config = {
     'kt': 'sym',
 }
 
+
+
 skeleton_num, muscle_tendon_parameters_num = import_functions.get_model_osim_scaled(osim_folder,osim_name,mtu_params = mtu_params)
 casadi_function, unknown_parameters, definition = useful.get_model_equation(param_config=param_config)
+
 
 # 6.1.5 training data set and import test data set
 data_train = useful.load_data_from_xlsx(train_folder, train_name, header)
@@ -564,12 +563,98 @@ data_test = useful.load_data_from_xlsx(test_folder, test_name, header)
 data_train = manipfun.add_tendon_length_to_data(data_train,skeleton_num, casadi_function)
 data_test = manipfun.add_tendon_length_to_data(data_test,skeleton_num, casadi_function)
 
-# 6.1.7 data visual verification
+useful.save_mtu_geometry_to_xlsx(data_train, skeleton_num, casadi_function,
+                              train_folder, 'geometrie_train_v2',
+                              convert_units=True, q_in_degrees=False)
 
-manipfun.plot_data(data_train, muscle_names=['tibialis', 'soleus', 'gastrocnemius'])
-manipfun.plot_data(data_test, muscle_names=['tibialis', 'soleus', 'gastrocnemius'])
+
+initial_guess, upper_band, lower_band, param_index = useful.get_initial_guess(
+    muscle_tendon_parameters_num, data_train, param_config,
+    'scaled', verbose=True)
+
+import get_hot_start
+
+mus = get_hot_start.hot_start_muscle(train_folder, 'geometrie_train_v2',
+                                     plot=True, verbose=True)
+
+ten = get_hot_start.hot_start_tendon(train_folder, 'geometrie_train_v2',
+                                     casadi_function['tendon_force_length_single_muscle'],
+                                     ankle=(-10, 0), mode='2p', f0m=mus,
+                                     plot=True, verbose=True)
 
 
+# x0 muscle : [mus[m].f0m ...] + [mus[m].lom ...] + [mus[m].phi0 ...]
+initial_guess_2 = get_hot_start.merge_tendon_muscle_param(mus,ten)
+
+
+initial_guess[10:15] =  initial_guess_2[10:15]
+upper_band[10:15] =initial_guess_2[10:15]*1.5
+lower_band[10:15] =initial_guess_2[10:15]*0.5
+upper_band[0:2] = upper_band[0:2] * 2
+
+pm_.interactive_calibration_figure(
+    data=data_test,
+    skeleton_num=skeleton_num,
+    casadi_function=casadi_function,
+    param_index=param_index,
+    param_initial=initial_guess,
+    param_lower=lower_band,
+    param_upper=upper_band,
+    solve_all_muscles=useful.solve_all_muscles,
+)
+
+muscle_tendon_parameters_opt = useful.optimization_nlp(
+    data_train,
+    initial_guess,
+    lower_band,
+    upper_band,
+    skeleton_num,
+    initial_guess,
+    unknown_parameters,
+    casadi_function,
+    param_index)
+
+
+
+"""
+
+import temp as tmp
+from temp import (plot_force_length,
+                          f_angle, f_activation, f_active, f_inactive, f_where)
+
+
+
+
+plot_force_length(train_folder, 'geometrie_train_v2',
+    muscles=['soleus'],            # str ou liste ; un sous-graphe par muscle
+    length='tendon_length',          # 'muscle_length', 'fiber_length', 'mtu_length'...
+    filters=[
+        f_angle('knee', [0,90]),          # genou à 0°
+        f_angle('ankle', [0]), # une LISTE d'angles autorisés
+        f_inactive('tibialis')        # exclure si soléaire actif (a ≤ 0.05)
+    ])
+
+
+
+plot_force_length(train_folder, 'geometrie_train_v2',
+    muscles=['tibialis'],            # str ou liste ; un sous-graphe par muscle
+    length='tendon_length',          # 'muscle_length', 'fiber_length', 'mtu_length'...
+    filters=[
+        f_angle('knee', 0),          # genou à 0°
+        f_angle('ankle', [-10, 0, 10]), # une LISTE d'angles autorisés
+        f_inactive('soleus')        # exclure si soléaire actif (a ≤ 0.05)
+    ])
+    
+plot_force_length(train_folder, 'geometrie_train_v2',
+    muscles=['tibialis'],            # str ou liste ; un sous-graphe par muscle
+    length='tendon_length',          # 'muscle_length', 'fiber_length', 'mtu_length'...
+    filters=[
+        f_angle('knee', 0),          # genou à 0°
+        f_angle('ankle', [0, 10, 20]), # une LISTE d'angles autorisés
+        f_active('tibialis'),        # tibialis sollicité (a ≥ 0.05)
+        f_inactive('soleus'),        # exclure si soléaire actif (a ≤ 0.05)
+        f_activation('gastrocnemius', lo=0.1, hi=0.8),  # bornes min/max
+    ])
 
 # 6.2 optimization
 # 6.2.1 set the initial guess according to the test data
@@ -617,7 +702,7 @@ muscle_tendon_parameters_opt = useful.optimization_nlp(
     param_index)
 
 
-"""
+
 muscle_tendon_parameters_opt = useful.optimization_nlp(
     data_train,
     initial_guess,
@@ -628,7 +713,7 @@ muscle_tendon_parameters_opt = useful.optimization_nlp(
     unknown_parameters,
     casadi_function,
     param_index)
-    
+
 import nlp_test
 
 muscle_tendon_parameters_opt = nlp_test.optimization_nlp_raw_plain(
